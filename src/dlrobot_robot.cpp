@@ -122,6 +122,9 @@ Function: Publish the odometer topic, Contains position, attitude, triaxial velo
 ***************************************/
 void turn_on_robot::Publish_Odom()
 {
+    // 1. 创建一个静态的TF广播器对象，确保只初始化一次
+    static tf::TransformBroadcaster odom_broadcaster;
+
     //Convert the Z-axis rotation Angle into a quaternion for expression 
     //把Z轴转角转换为四元数进行表达
     geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(Robot_Pos.Z);
@@ -151,6 +154,22 @@ void turn_on_robot::Publish_Odom()
       //如果小车velocity非零，考虑到运动中编码器可能带来的滑动误差，认为imu的数据更可靠
       memcpy(&odom.pose.covariance, odom_pose_covariance, sizeof(odom_pose_covariance)),
       memcpy(&odom.twist.covariance, odom_twist_covariance, sizeof(odom_twist_covariance));       
+    
+    // 2. 在发布odom消息之前，先广播TF变换
+    geometry_msgs::TransformStamped odom_trans;
+    odom_trans.header.stamp = odom.header.stamp; // 使用与odom消息相同的时间戳
+    odom_trans.header.frame_id = odom_frame_id;
+    odom_trans.child_frame_id = robot_frame_id;
+
+    odom_trans.transform.translation.x = Robot_Pos.X;
+    odom_trans.transform.translation.y = Robot_Pos.Y;
+    odom_trans.transform.translation.z = 0.0;
+    odom_trans.transform.rotation = odom_quat;
+
+    // 发送变换
+    odom_broadcaster.sendTransform(odom_trans);
+
+    // 3. 发布里程计消息
     odom_publisher.publish(odom); //Pub odometer topic //发布里程计话题
 }
 /**************************************
@@ -475,7 +494,7 @@ turn_on_robot::turn_on_robot():Sampling_Time(0),Power_voltage(0)
   ros::NodeHandle private_nh("~"); //Create a node handle //创建节点句柄
   //The private_nh.param() entry parameter corresponds to the initial value of the name of the parameter variable on the parameter server
   //private_nh.param()入口参数分别对应：参数服务器上的名称  参数变量名  初始值
-  private_nh.param<std::string>("usart_port_name",  usart_port_name,  "/dev/dlrobot_controller"); //Fixed serial port number //固定串口号
+  private_nh.param<std::string>("usart_port_name",  usart_port_name,  "/dev/dlrobot_controller"); //Fixed串口号
   private_nh.param<int>        ("serial_baud_rate", serial_baud_rate, 115200); //Communicate baud rate 115200 to the lower machine //和下位机通信波特率115200
   private_nh.param<std::string>("odom_frame_id",    odom_frame_id,    "odom_combined");      //The odometer topic corresponds to the parent TF coordinate //里程计话题对应父TF坐标
   private_nh.param<std::string>("robot_frame_id",   robot_frame_id,   "base_footprint"); //The odometer topic corresponds to sub-TF coordinates //里程计话题对应子TF坐标
