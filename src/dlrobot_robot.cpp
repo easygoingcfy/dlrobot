@@ -122,39 +122,40 @@ Function: Publish the odometer topic, Contains position, attitude, triaxial velo
 ***************************************/
 void turn_on_robot::Publish_Odom()
 {
-    static tf::TransformBroadcaster odom_broadcaster;
-
+    //Convert the Z-axis rotation Angle into a quaternion for expression 
+    //把Z轴转角转换为四元数进行表达
     geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(Robot_Pos.Z);
 
     // 1. 准备TF变换消息
     geometry_msgs::TransformStamped odom_trans;
     odom_trans.header.stamp = ros::Time::now();
-    // --- 强制修正 frame_id ---
     odom_trans.header.frame_id = "odom";
     odom_trans.child_frame_id = "base_link";
-    // -------------------------
     odom_trans.transform.translation.x = Robot_Pos.X;
     odom_trans.transform.translation.y = Robot_Pos.Y;
     odom_trans.transform.translation.z = 0.0;
     odom_trans.transform.rotation = odom_quat;
 
-    // 2. 发送变换
-    odom_broadcaster.sendTransform(odom_trans);
+    // 2. 发送变换 - 使用节点句柄创建TF广播器确保节点名正确
+    static tf::TransformBroadcaster* tf_broadcaster = nullptr;
+    if (!tf_broadcaster) {
+        tf_broadcaster = new tf::TransformBroadcaster();
+    }
+    tf_broadcaster->sendTransform(odom_trans);
 
     // 3. 准备并发布里程计消息
-    nav_msgs::Odometry odom;
+    nav_msgs::Odometry odom; //Instance the odometer topic data //实例化里程计话题数据
     odom.header.stamp = odom_trans.header.stamp; // 确保时间戳一致
-    // --- 强制修正 frame_id ---
-    odom.header.frame_id = "odom";
-    odom.child_frame_id = "base_link";
-    // -------------------------
-    odom.pose.pose.position.x = Robot_Pos.X;
+    odom.header.frame_id = "odom"; // Odometer TF parent coordinates //里程计TF父坐标
+    odom.pose.pose.position.x = Robot_Pos.X; //Position //位置
     odom.pose.pose.position.y = Robot_Pos.Y;
-    odom.pose.pose.position.z = 0.0;
-    odom.pose.pose.orientation = odom_quat;
-    odom.twist.twist.linear.x =  Robot_Vel.X;
-    odom.twist.twist.linear.y =  Robot_Vel.Y;
-    odom.twist.twist.angular.z = Robot_Vel.Z;
+    odom.pose.pose.position.z = 0;
+    odom.pose.pose.orientation = odom_quat; //Posture, Quaternion converted by Z-axis rotation //姿态，通过Z轴转角转换的四元数
+
+    odom.child_frame_id = "base_link"; // Odometer TF subcoordinates //里程计TF子坐标
+    odom.twist.twist.linear.x =  Robot_Vel.X; //Speed in the X direction //X方向速度
+    odom.twist.twist.linear.y =  Robot_Vel.Y; //Speed in the Y direction //Y方向速度
+    odom.twist.twist.angular.z = Robot_Vel.Z; //Angular velocity around the Z axis //绕Z轴角速度
 
     //There are two types of this matrix, which are used when the robot is at rest and when it is moving.Extended Kalman Filtering officially provides 2 matrices for the robot_pose_ekf feature pack
     //这个矩阵有两种，分别在机器人静止和运动的时候使用。扩展卡尔曼滤波官方提供的2个矩阵，用于robot_pose_ekf功能包
@@ -444,16 +445,16 @@ Function: Loop access to the lower computer data and issue topics
 void turn_on_robot::Control()
 {
   _Last_Time = ros::Time::now();
+  ros::Rate loop_rate(50); // 设置循环频率为50Hz，适合里程计发布
+  int publish_count = 0;   // 用于调试计数
+  
   while(ros::ok())
   {
-    Sampling_Time = (_Now - _Last_Time).toSec(); //Retrieves time interval, which is used to integrate velocity to obtain displacement (mileage) 
-                                                 //获取时间间隔，用于积分速度获得位移(里程)
     _Now = ros::Time::now();
-    if (true == Get_Sensor_Data_New()) //The serial port reads and verifies the data sent by the lower computer, and then the data is converted to international units
-                                   //通过串口读取并校验下位机发送过来的数据，然后数据转换为国际单位
+    Sampling_Time = (_Now - _Last_Time).toSec(); 
+    
+    if (true == Get_Sensor_Data_New()) 
     {
-      
-
       Robot_Pos.X+=(Robot_Vel.X * cos(Robot_Pos.Z) - Robot_Vel.Y * sin(Robot_Pos.Z)) * Sampling_Time; //Calculate the displacement in the X direction, unit: m //计算X方向的位移，单位：m
       Robot_Pos.Y+=(Robot_Vel.X * sin(Robot_Pos.Z) + Robot_Vel.Y * cos(Robot_Pos.Z)) * Sampling_Time; //Calculate the displacement in the Y direction, unit: m //计算Y方向的位移，单位：m
       Robot_Pos.Z+=Robot_Vel.Z * Sampling_Time; //The angular displacement about the Z axis, in rad //绕Z轴的角位移，单位：rad 
@@ -463,15 +464,21 @@ void turn_on_robot::Control()
       Quaternion_Solution(Mpu6050.angular_velocity.x, Mpu6050.angular_velocity.y, Mpu6050.angular_velocity.z,\
                 Mpu6050.linear_acceleration.x, Mpu6050.linear_acceleration.y, Mpu6050.linear_acceleration.z);
 
-      Publish_Odom();      //Pub the speedometer topic //发布里程计话题
-      Publish_ImuSensor(); //Pub the IMU topic //发布IMU话题    
-      Publish_Voltage();   //Pub the topic of power supply voltage //发布电源电压话题
-
-      _Last_Time = _Now; //Record the time and use it to calculate the time interval //记录时间，用于计算时间间隔
-      
+      _Last_Time = _Now; 
     }
     
-    ros::spinOnce();   //The loop waits for the callback function //循环等待回调函数
+    // 无论是否收到新数据，都发布里程计和TF
+    Publish_Odom();      //Pub the speedometer topic //发布里程计话题
+    Publish_ImuSensor(); //Pub the IMU topic //发布IMU话题    
+    Publish_Voltage();   //Pub the topic of power supply voltage //发布电源电压话题
+    
+    // 每100次发布打印一次调试信息
+    if(++publish_count % 100 == 0) {
+        ROS_INFO("dlrobot_robot: Published odom TF [odom -> base_link], count: %d", publish_count);
+    }
+    
+    ros::spinOnce();   
+    loop_rate.sleep(); // 控制循环频率
     }
 }
 /**************************************
