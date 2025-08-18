@@ -137,9 +137,10 @@ void turn_on_robot::Publish_Odom()
     odom_trans.transform.rotation = odom_quat;
 
     // 2. 发送变换 - 使用节点句柄创建TF广播器确保节点名正确
-    static tf::TransformBroadcaster* tf_broadcaster = nullptr;
+    static boost::shared_ptr<tf::TransformBroadcaster> tf_broadcaster;
     if (!tf_broadcaster) {
-        tf_broadcaster = new tf::TransformBroadcaster();
+        tf_broadcaster.reset(new tf::TransformBroadcaster());
+        ROS_INFO("dlrobot_robot: TF broadcaster initialized");
     }
     tf_broadcaster->sendTransform(odom_trans);
 
@@ -445,7 +446,7 @@ Function: Loop access to the lower computer data and issue topics
 void turn_on_robot::Control()
 {
   _Last_Time = ros::Time::now();
-  ros::Rate loop_rate(50); // 设置循环频率为50Hz，适合里程计发布
+  ros::Rate loop_rate(20); // 降低到20Hz，对建图更友好
   int publish_count = 0;   // 用于调试计数
   
   while(ros::ok())
