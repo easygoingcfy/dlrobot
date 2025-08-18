@@ -122,25 +122,39 @@ Function: Publish the odometer topic, Contains position, attitude, triaxial velo
 ***************************************/
 void turn_on_robot::Publish_Odom()
 {
-    // 1. 创建一个静态的TF广播器对象，确保只初始化一次
     static tf::TransformBroadcaster odom_broadcaster;
 
-    //Convert the Z-axis rotation Angle into a quaternion for expression 
-    //把Z轴转角转换为四元数进行表达
     geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(Robot_Pos.Z);
 
-    nav_msgs::Odometry odom; //Instance the odometer topic data //实例化里程计话题数据
-    odom.header.stamp = ros::Time::now(); 
-    odom.header.frame_id = odom_frame_id; // Odometer TF parent coordinates //里程计TF父坐标
-    odom.pose.pose.position.x = Robot_Pos.X; //Position //位置
-    odom.pose.pose.position.y = Robot_Pos.Y;
-    odom.pose.pose.position.z = 0;
-    odom.pose.pose.orientation = odom_quat; //Posture, Quaternion converted by Z-axis rotation //姿态，通过Z轴转角转换的四元数
+    // 1. 准备TF变换消息
+    geometry_msgs::TransformStamped odom_trans;
+    odom_trans.header.stamp = ros::Time::now();
+    // --- 强制修正 frame_id ---
+    odom_trans.header.frame_id = "odom";
+    odom_trans.child_frame_id = "base_link";
+    // -------------------------
+    odom_trans.transform.translation.x = Robot_Pos.X;
+    odom_trans.transform.translation.y = Robot_Pos.Y;
+    odom_trans.transform.translation.z = 0.0;
+    odom_trans.transform.rotation = odom_quat;
 
-    odom.child_frame_id = robot_frame_id; // Odometer TF subcoordinates //里程计TF子坐标
-    odom.twist.twist.linear.x =  Robot_Vel.X; //Speed in the X direction //X方向速度
-    odom.twist.twist.linear.y =  Robot_Vel.Y; //Speed in the Y direction //Y方向速度
-    odom.twist.twist.angular.z = Robot_Vel.Z; //Angular velocity around the Z axis //绕Z轴角速度 
+    // 2. 发送变换
+    odom_broadcaster.sendTransform(odom_trans);
+
+    // 3. 准备并发布里程计消息
+    nav_msgs::Odometry odom;
+    odom.header.stamp = odom_trans.header.stamp; // 确保时间戳一致
+    // --- 强制修正 frame_id ---
+    odom.header.frame_id = "odom";
+    odom.child_frame_id = "base_link";
+    // -------------------------
+    odom.pose.pose.position.x = Robot_Pos.X;
+    odom.pose.pose.position.y = Robot_Pos.Y;
+    odom.pose.pose.position.z = 0.0;
+    odom.pose.pose.orientation = odom_quat;
+    odom.twist.twist.linear.x =  Robot_Vel.X;
+    odom.twist.twist.linear.y =  Robot_Vel.Y;
+    odom.twist.twist.angular.z = Robot_Vel.Z;
 
     //There are two types of this matrix, which are used when the robot is at rest and when it is moving.Extended Kalman Filtering officially provides 2 matrices for the robot_pose_ekf feature pack
     //这个矩阵有两种，分别在机器人静止和运动的时候使用。扩展卡尔曼滤波官方提供的2个矩阵，用于robot_pose_ekf功能包
@@ -155,22 +169,10 @@ void turn_on_robot::Publish_Odom()
       memcpy(&odom.pose.covariance, odom_pose_covariance, sizeof(odom_pose_covariance)),
       memcpy(&odom.twist.covariance, odom_twist_covariance, sizeof(odom_twist_covariance));       
     
-    // 2. 在发布odom消息之前，先广播TF变换
-    geometry_msgs::TransformStamped odom_trans;
-    odom_trans.header.stamp = odom.header.stamp; // 使用与odom消息相同的时间戳
-    odom_trans.header.frame_id = odom_frame_id;
-    odom_trans.child_frame_id = robot_frame_id;
+    odom_publisher.publish(odom);
 
-    odom_trans.transform.translation.x = Robot_Pos.X;
-    odom_trans.transform.translation.y = Robot_Pos.Y;
-    odom_trans.transform.translation.z = 0.0;
-    odom_trans.transform.rotation = odom_quat;
-
-    // 发送变换
-    odom_broadcaster.sendTransform(odom_trans);
-
-    // 3. 发布里程计消息
-    odom_publisher.publish(odom); //Pub odometer topic //发布里程计话题
+    // 4. 添加日志打印
+    ROS_INFO_THROTTLE(1.0, "Publishing odom TF: [%s] -> [%s]", odom.header.frame_id.c_str(), odom.child_frame_id.c_str());
 }
 /**************************************
 Date: January 28, 2021
@@ -320,8 +322,6 @@ bool turn_on_robot::Get_Sensor_Data()
 		
 		
         //The gyroscope unit conversion is related to the range of STM32's IMU when initialized. Here, the range of IMU's gyroscope is ±500°/s
-        //Because the robot generally has a slow Z-axis speed, reducing the range can improve the accuracy
-        //陀螺仪单位转化，和STM32的IMU初始化的时候的量程有关，这里IMU的陀螺仪的量程是±500°/s
         //因为机器人一般Z轴速度不快，降低量程可以提高精度
         Mpu6050.angular_velocity.x =  Mpu6050_Data.gyros_x_data * GYROSCOPE_RATIO;
         Mpu6050.angular_velocity.y =  Mpu6050_Data.gyros_y_data * GYROSCOPE_RATIO;
@@ -415,8 +415,6 @@ bool turn_on_robot::Get_Sensor_Data_New()
         Mpu6050.linear_acceleration.z = 9.8;	
 		#endif
         //The gyroscope unit conversion is related to the range of STM32's IMU when initialized. Here, the range of IMU's gyroscope is ±500°/s
-        //Because the robot generally has a slow Z-axis speed, reducing the range can improve the accuracy
-        //陀螺仪单位转化，和STM32的IMU初始化的时候的量程有关，这里IMU的陀螺仪的量程是±500°/s
         //因为机器人一般Z轴速度不快，降低量程可以提高精度
         Mpu6050.angular_velocity.x =  Mpu6050_Data.gyros_x_data * GYROSCOPE_RATIO;
         Mpu6050.angular_velocity.y =  Mpu6050_Data.gyros_y_data * GYROSCOPE_RATIO;
@@ -496,8 +494,8 @@ turn_on_robot::turn_on_robot():Sampling_Time(0),Power_voltage(0)
   //private_nh.param()入口参数分别对应：参数服务器上的名称  参数变量名  初始值
   private_nh.param<std::string>("usart_port_name",  usart_port_name,  "/dev/dlrobot_controller"); //Fixed串口号
   private_nh.param<int>        ("serial_baud_rate", serial_baud_rate, 115200); //Communicate baud rate 115200 to the lower machine //和下位机通信波特率115200
-  private_nh.param<std::string>("odom_frame_id",    odom_frame_id,    "odom_combined");      //The odometer topic corresponds to the parent TF coordinate //里程计话题对应父TF坐标
-  private_nh.param<std::string>("robot_frame_id",   robot_frame_id,   "base_footprint"); //The odometer topic corresponds to sub-TF coordinates //里程计话题对应子TF坐标
+  // private_nh.param<std::string>("odom_frame_id",    odom_frame_id,    "odom_combined");      // 注释掉，使用硬编码
+  // private_nh.param<std::string>("robot_frame_id",   robot_frame_id,   "base_footprint"); // 注释掉，使用硬编码
   private_nh.param<std::string>("gyro_frame_id",    gyro_frame_id,    "imu_link"); //IMU topics correspond to TF coordinates //IMU话题对应TF坐标
 
   voltage_publisher = n.advertise<std_msgs::Float32>("PowerVoltage", 10); //Create a battery-voltage topic publisher //创建电池电压话题发布者
