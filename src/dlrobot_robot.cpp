@@ -396,6 +396,16 @@ bool turn_on_robot::Get_Sensor_Data_New()
         Robot_Vel.Y = Odom_Trans(Receive_Data.rx[4],Receive_Data.rx[5]); //Get the speed of the moving chassis in the Y direction, The Y speed is only valid in the omnidirectional mobile robot chassis
                                                                           //获取运动底盘Y方向速度，Y速度仅在全向移动机器人底盘有效
         Robot_Vel.Z = Odom_Trans(Receive_Data.rx[6],Receive_Data.rx[7]); //Get the speed of the moving chassis in the Z direction //获取运动底盘Z方向速度   
+        
+        // 添加调试信息，检查从串口接收到的速度数据
+        static int vel_debug_count = 0;
+        if(++vel_debug_count % 100 == 0) {  // 每100次打印一次
+          ROS_INFO("Get_Sensor_Data_New: Raw data [2-7]: %02x %02x %02x %02x %02x %02x", 
+                   Receive_Data.rx[2], Receive_Data.rx[3], Receive_Data.rx[4], 
+                   Receive_Data.rx[5], Receive_Data.rx[6], Receive_Data.rx[7]);
+          ROS_INFO("Get_Sensor_Data_New: Parsed velocities: X=%.3f, Y=%.3f, Z=%.3f", 
+                   Robot_Vel.X, Robot_Vel.Y, Robot_Vel.Z);
+        }
           
         //MPU6050 stands for IMU only and does not refer to a specific model. It can be either MPU6050 or MPU9250
         //Mpu6050仅代表IMU，不指代特定型号，既可以是MPU6050也可以是MPU9250
@@ -456,9 +466,23 @@ void turn_on_robot::Control()
     
     if (true == Get_Sensor_Data_New()) 
     {
+      // 添加调试信息，检查速度数据
+      static int debug_count = 0;
+      if(++debug_count % 50 == 0) {  // 每50次打印一次
+        ROS_INFO("dlrobot_robot: Sensor data received. Robot_Vel: X=%.3f, Y=%.3f, Z=%.3f, Sampling_Time=%.4f", 
+                 Robot_Vel.X, Robot_Vel.Y, Robot_Vel.Z, Sampling_Time);
+        ROS_INFO("dlrobot_robot: Robot_Pos before integration: X=%.3f, Y=%.3f, Z=%.3f", 
+                 Robot_Pos.X, Robot_Pos.Y, Robot_Pos.Z);
+      }
+      
       Robot_Pos.X+=(Robot_Vel.X * cos(Robot_Pos.Z) - Robot_Vel.Y * sin(Robot_Pos.Z)) * Sampling_Time; //Calculate the displacement in the X direction, unit: m //计算X方向的位移，单位：m
       Robot_Pos.Y+=(Robot_Vel.X * sin(Robot_Pos.Z) + Robot_Vel.Y * cos(Robot_Pos.Z)) * Sampling_Time; //Calculate the displacement in the Y direction, unit: m //计算Y方向的位移，单位：m
       Robot_Pos.Z+=Robot_Vel.Z * Sampling_Time; //The angular displacement about the Z axis, in rad //绕Z轴的角位移，单位：rad 
+
+      if(debug_count % 50 == 0) {  // 积分后的位置
+        ROS_INFO("dlrobot_robot: Robot_Pos after integration: X=%.3f, Y=%.3f, Z=%.3f", 
+                 Robot_Pos.X, Robot_Pos.Y, Robot_Pos.Z);
+      }
 
       //Calculate the three-axis attitude from the IMU with the angular velocity around the three-axis and the three-axis acceleration
       //通过IMU绕三轴角速度与三轴加速度计算三轴姿态
@@ -466,6 +490,14 @@ void turn_on_robot::Control()
                 Mpu6050.linear_acceleration.x, Mpu6050.linear_acceleration.y, Mpu6050.linear_acceleration.z);
 
       _Last_Time = _Now; 
+    }
+    else
+    {
+      // 添加调试信息，检查是否没有收到数据
+      static int no_data_count = 0;
+      if(++no_data_count % 100 == 0) {  // 每100次打印一次
+        ROS_INFO("dlrobot_robot: No sensor data received, count: %d", no_data_count);
+      }
     }
     
     // 无论是否收到新数据，都发布里程计和TF
