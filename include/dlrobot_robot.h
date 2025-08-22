@@ -1,4 +1,3 @@
-
 #ifndef __WHEELTEC_ROBOT_H_
 #define __WHEELTEC_ROBOT_H_
 
@@ -142,7 +141,7 @@ class turn_on_robot
 		ros::Subscriber Cmd_Vel_Sub; //Initialize the topic subscriber //初始化话题订阅者
 		//The speed topic subscribes to the callback function
 		//速度话题订阅回调函数
-		void Cmd_Vel_Callback(const geometry_msgs::Twist &twist_aux);              
+		void Cmd_Vel_Callback(const geometry_msgs::Twist &twist_aux);
 
 		ros::Publisher odom_publisher, imu_publisher, voltage_publisher; //Initialize the topic publisher //初始化话题发布者
 		void Publish_Odom();      //Pub the speedometer topic //发布里程计话题
@@ -154,11 +153,11 @@ class turn_on_robot
         bool Get_Sensor_Data();   
 		bool Get_Sensor_Data_New();
         unsigned char Check_Sum(unsigned char Count_Number,unsigned char mode); //BBC check function //BBC校验函数
-        short IMU_Trans(uint8_t Data_High,uint8_t Data_Low);  //IMU data conversion read //IMU数据转化读取
-		float Odom_Trans(uint8_t Data_High,uint8_t Data_Low); //Odometer data is converted to read //里程计数据转化读取
+        short IMU_Trans(uint8_t Data_High,uint8_t Data_Low);  //IMU数据转化读取
+		float Odom_Trans(uint8_t Data_High,uint8_t Data_Low); //里程计数据转化读取
 
         string usart_port_name, robot_frame_id, gyro_frame_id, odom_frame_id; //Define the related variables //定义相关变量
-        int serial_baud_rate;      //Serial communication baud rate //串口通信波特率
+        int serial_baud_rate;      //Serial communication波特率 //串口通信波特率
         RECEIVE_DATA Receive_Data; //The serial port receives the data structure //串口接收数据结构体
         SEND_DATA Send_Data;       //The serial port sends the data structure //串口发送数据结构体
 
@@ -166,5 +165,8 @@ class turn_on_robot
         Vel_Pos_Data Robot_Vel;    //The speed of the robot //机器人的速度
         MPU6050_DATA Mpu6050_Data; //IMU data //IMU数据
         float Power_voltage;       //Power supply voltage //电源电压
+
+        // 是否发布里程计TF（odom->base_link/base_footprint），可通过参数publish_tf配置
+        bool publish_tf;           // 控制是否发布TF
 };
 #endif
