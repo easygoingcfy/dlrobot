@@ -33,12 +33,5 @@ catkin_package(
 include_directories(include ${catkin_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS})
 include_directories(include/${PROJECT_NAME})
 
-# add_executable(dlrobot_robot_node src/dlrobot_robot.cpp src/Quaternion_Solution.cpp)
-# target_link_libraries(dlrobot_robot_node ${catkin_LIBRARIES})
-
-add_executable(dlrobot_robot src/dlrobot_robot.cpp src/Quaternion_Solution.cpp) # 将Quaternion_Solution.cpp添加到编译目标
-add_dependencies(dlrobot_robot ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-
-target_link_libraries(dlrobot_robot
-  ${catkin_LIBRARIES}
-)
+add_executable(dlrobot_robot_node src/dlrobot_robot.cpp src/Quaternion_Solution.cpp)
+target_link_libraries(dlrobot_robot_node ${catkin_LIBRARIES})

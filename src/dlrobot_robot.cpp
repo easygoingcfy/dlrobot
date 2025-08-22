@@ -1,12 +1,10 @@
 #include "dlrobot_robot.h"
 #include "Quaternion_Solution.h"
-#include <nav_msgs/Odometry.h>
-#include <tf/transform_broadcaster.h> // 1. 添加TF广播器头文件
 
 sensor_msgs::Imu Mpu6050;//Instantiate an IMU object //实例化IMU对象 
 
 /**************************************
-Date: January 28, 2022
+Date: January 28, 2021
 Function: The main function, ROS initialization, creates the Robot_control object through the Turn_on_robot class and automatically calls the constructor initialization
 功能: 主函数，ROS初始化，通过turn_on_robot类创建Robot_control对象并自动调用构造函数初始化
 ***************************************/
@@ -126,37 +124,18 @@ void turn_on_robot::Publish_Odom()
     //把Z轴转角转换为四元数进行表达
     geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(Robot_Pos.Z);
 
-    // 1. 准备TF变换消息
-    geometry_msgs::TransformStamped odom_trans;
-    odom_trans.header.stamp = ros::Time::now();
-    odom_trans.header.frame_id = "odom";
-    odom_trans.child_frame_id = "base_link";
-    odom_trans.transform.translation.x = Robot_Pos.X;
-    odom_trans.transform.translation.y = Robot_Pos.Y;
-    odom_trans.transform.translation.z = 0.0;
-    odom_trans.transform.rotation = odom_quat;
-
-    // 2. 发送变换 - 使用节点句柄创建TF广播器确保节点名正确
-    static boost::shared_ptr<tf::TransformBroadcaster> tf_broadcaster;
-    if (!tf_broadcaster) {
-        tf_broadcaster.reset(new tf::TransformBroadcaster());
-        ROS_INFO("dlrobot_robot: TF broadcaster initialized");
-    }
-    tf_broadcaster->sendTransform(odom_trans);
-
-    // 3. 准备并发布里程计消息
     nav_msgs::Odometry odom; //Instance the odometer topic data //实例化里程计话题数据
-    odom.header.stamp = odom_trans.header.stamp; // 确保时间戳一致
-    odom.header.frame_id = "odom"; // Odometer TF parent coordinates //里程计TF父坐标
+    odom.header.stamp = ros::Time::now(); 
+    odom.header.frame_id = odom_frame_id; // Odometer TF parent coordinates //里程计TF父坐标
     odom.pose.pose.position.x = Robot_Pos.X; //Position //位置
     odom.pose.pose.position.y = Robot_Pos.Y;
     odom.pose.pose.position.z = 0;
     odom.pose.pose.orientation = odom_quat; //Posture, Quaternion converted by Z-axis rotation //姿态，通过Z轴转角转换的四元数
 
-    odom.child_frame_id = "base_link"; // Odometer TF subcoordinates //里程计TF子坐标
+    odom.child_frame_id = robot_frame_id; // Odometer TF subcoordinates //里程计TF子坐标
     odom.twist.twist.linear.x =  Robot_Vel.X; //Speed in the X direction //X方向速度
     odom.twist.twist.linear.y =  Robot_Vel.Y; //Speed in the Y direction //Y方向速度
-    odom.twist.twist.angular.z = Robot_Vel.Z; //Angular velocity around the Z axis //绕Z轴角速度
+    odom.twist.twist.angular.z = Robot_Vel.Z; //Angular velocity around the Z axis //绕Z轴角速度 
 
     //There are two types of this matrix, which are used when the robot is at rest and when it is moving.Extended Kalman Filtering officially provides 2 matrices for the robot_pose_ekf feature pack
     //这个矩阵有两种，分别在机器人静止和运动的时候使用。扩展卡尔曼滤波官方提供的2个矩阵，用于robot_pose_ekf功能包
@@ -170,11 +149,7 @@ void turn_on_robot::Publish_Odom()
       //如果小车velocity非零，考虑到运动中编码器可能带来的滑动误差，认为imu的数据更可靠
       memcpy(&odom.pose.covariance, odom_pose_covariance, sizeof(odom_pose_covariance)),
       memcpy(&odom.twist.covariance, odom_twist_covariance, sizeof(odom_twist_covariance));       
-    
-    odom_publisher.publish(odom);
-
-    // 4. 添加日志打印
-    ROS_INFO_THROTTLE(1.0, "Publishing odom TF: [%s] -> [%s]", odom.header.frame_id.c_str(), odom.child_frame_id.c_str());
+    odom_publisher.publish(odom); //Pub odometer topic //发布里程计话题
 }
 /**************************************
 Date: January 28, 2021
@@ -324,6 +299,8 @@ bool turn_on_robot::Get_Sensor_Data()
 		
 		
         //The gyroscope unit conversion is related to the range of STM32's IMU when initialized. Here, the range of IMU's gyroscope is ±500°/s
+        //Because the robot generally has a slow Z-axis speed, reducing the range can improve the accuracy
+        //陀螺仪单位转化，和STM32的IMU初始化的时候的量程有关，这里IMU的陀螺仪的量程是±500°/s
         //因为机器人一般Z轴速度不快，降低量程可以提高精度
         Mpu6050.angular_velocity.x =  Mpu6050_Data.gyros_x_data * GYROSCOPE_RATIO;
         Mpu6050.angular_velocity.y =  Mpu6050_Data.gyros_y_data * GYROSCOPE_RATIO;
@@ -396,16 +373,6 @@ bool turn_on_robot::Get_Sensor_Data_New()
         Robot_Vel.Y = Odom_Trans(Receive_Data.rx[4],Receive_Data.rx[5]); //Get the speed of the moving chassis in the Y direction, The Y speed is only valid in the omnidirectional mobile robot chassis
                                                                           //获取运动底盘Y方向速度，Y速度仅在全向移动机器人底盘有效
         Robot_Vel.Z = Odom_Trans(Receive_Data.rx[6],Receive_Data.rx[7]); //Get the speed of the moving chassis in the Z direction //获取运动底盘Z方向速度   
-        
-        // 添加调试信息，检查从串口接收到的速度数据
-        static int vel_debug_count = 0;
-        if(++vel_debug_count % 100 == 0) {  // 每100次打印一次
-          ROS_INFO("Get_Sensor_Data_New: Raw data [2-7]: %02x %02x %02x %02x %02x %02x", 
-                   Receive_Data.rx[2], Receive_Data.rx[3], Receive_Data.rx[4], 
-                   Receive_Data.rx[5], Receive_Data.rx[6], Receive_Data.rx[7]);
-          ROS_INFO("Get_Sensor_Data_New: Parsed velocities: X=%.3f, Y=%.3f, Z=%.3f", 
-                   Robot_Vel.X, Robot_Vel.Y, Robot_Vel.Z);
-        }
           
         //MPU6050 stands for IMU only and does not refer to a specific model. It can be either MPU6050 or MPU9250
         //Mpu6050仅代表IMU，不指代特定型号，既可以是MPU6050也可以是MPU9250
@@ -427,6 +394,8 @@ bool turn_on_robot::Get_Sensor_Data_New()
         Mpu6050.linear_acceleration.z = 9.8;	
 		#endif
         //The gyroscope unit conversion is related to the range of STM32's IMU when initialized. Here, the range of IMU's gyroscope is ±500°/s
+        //Because the robot generally has a slow Z-axis speed, reducing the range can improve the accuracy
+        //陀螺仪单位转化，和STM32的IMU初始化的时候的量程有关，这里IMU的陀螺仪的量程是±500°/s
         //因为机器人一般Z轴速度不快，降低量程可以提高精度
         Mpu6050.angular_velocity.x =  Mpu6050_Data.gyros_x_data * GYROSCOPE_RATIO;
         Mpu6050.angular_velocity.y =  Mpu6050_Data.gyros_y_data * GYROSCOPE_RATIO;
@@ -456,62 +425,34 @@ Function: Loop access to the lower computer data and issue topics
 void turn_on_robot::Control()
 {
   _Last_Time = ros::Time::now();
-  ros::Rate loop_rate(20); // 降低到20Hz，对建图更友好
-  int publish_count = 0;   // 用于调试计数
-  
   while(ros::ok())
   {
+    Sampling_Time = (_Now - _Last_Time).toSec(); //Retrieves time interval, which is used to integrate velocity to obtain displacement (mileage) 
+                                                 //获取时间间隔，用于积分速度获得位移(里程)
     _Now = ros::Time::now();
-    Sampling_Time = (_Now - _Last_Time).toSec(); 
-    
-    if (true == Get_Sensor_Data_New()) 
+    if (true == Get_Sensor_Data_New()) //The serial port reads and verifies the data sent by the lower computer, and then the data is converted to international units
+                                   //通过串口读取并校验下位机发送过来的数据，然后数据转换为国际单位
     {
-      // 添加调试信息，检查速度数据
-      static int debug_count = 0;
-      if(++debug_count % 50 == 0) {  // 每50次打印一次
-        ROS_INFO("dlrobot_robot: Sensor data received. Robot_Vel: X=%.3f, Y=%.3f, Z=%.3f, Sampling_Time=%.4f", 
-                 Robot_Vel.X, Robot_Vel.Y, Robot_Vel.Z, Sampling_Time);
-        ROS_INFO("dlrobot_robot: Robot_Pos before integration: X=%.3f, Y=%.3f, Z=%.3f", 
-                 Robot_Pos.X, Robot_Pos.Y, Robot_Pos.Z);
-      }
       
+
       Robot_Pos.X+=(Robot_Vel.X * cos(Robot_Pos.Z) - Robot_Vel.Y * sin(Robot_Pos.Z)) * Sampling_Time; //Calculate the displacement in the X direction, unit: m //计算X方向的位移，单位：m
       Robot_Pos.Y+=(Robot_Vel.X * sin(Robot_Pos.Z) + Robot_Vel.Y * cos(Robot_Pos.Z)) * Sampling_Time; //Calculate the displacement in the Y direction, unit: m //计算Y方向的位移，单位：m
       Robot_Pos.Z+=Robot_Vel.Z * Sampling_Time; //The angular displacement about the Z axis, in rad //绕Z轴的角位移，单位：rad 
-
-      if(debug_count % 50 == 0) {  // 积分后的位置
-        ROS_INFO("dlrobot_robot: Robot_Pos after integration: X=%.3f, Y=%.3f, Z=%.3f", 
-                 Robot_Pos.X, Robot_Pos.Y, Robot_Pos.Z);
-      }
 
       //Calculate the three-axis attitude from the IMU with the angular velocity around the three-axis and the three-axis acceleration
       //通过IMU绕三轴角速度与三轴加速度计算三轴姿态
       Quaternion_Solution(Mpu6050.angular_velocity.x, Mpu6050.angular_velocity.y, Mpu6050.angular_velocity.z,\
                 Mpu6050.linear_acceleration.x, Mpu6050.linear_acceleration.y, Mpu6050.linear_acceleration.z);
 
-      _Last_Time = _Now; 
-    }
-    else
-    {
-      // 添加调试信息，检查是否没有收到数据
-      static int no_data_count = 0;
-      if(++no_data_count % 100 == 0) {  // 每100次打印一次
-        ROS_INFO("dlrobot_robot: No sensor data received, count: %d", no_data_count);
-      }
+      Publish_Odom();      //Pub the speedometer topic //发布里程计话题
+      Publish_ImuSensor(); //Pub the IMU topic //发布IMU话题    
+      Publish_Voltage();   //Pub the topic of power supply voltage //发布电源电压话题
+
+      _Last_Time = _Now; //Record the time and use it to calculate the time interval //记录时间，用于计算时间间隔
+      
     }
     
-    // 无论是否收到新数据，都发布里程计和TF
-    Publish_Odom();      //Pub the speedometer topic //发布里程计话题
-    Publish_ImuSensor(); //Pub the IMU topic //发布IMU话题    
-    Publish_Voltage();   //Pub the topic of power supply voltage //发布电源电压话题
-    
-    // 每100次发布打印一次调试信息
-    if(++publish_count % 100 == 0) {
-        ROS_INFO("dlrobot_robot: Published odom TF [odom -> base_link], count: %d", publish_count);
-    }
-    
-    ros::spinOnce();   
-    loop_rate.sleep(); // 控制循环频率
+    ros::spinOnce();   //The loop waits for the callback function //循环等待回调函数
     }
 }
 /**************************************
@@ -532,10 +473,10 @@ turn_on_robot::turn_on_robot():Sampling_Time(0),Power_voltage(0)
   ros::NodeHandle private_nh("~"); //Create a node handle //创建节点句柄
   //The private_nh.param() entry parameter corresponds to the initial value of the name of the parameter variable on the parameter server
   //private_nh.param()入口参数分别对应：参数服务器上的名称  参数变量名  初始值
-  private_nh.param<std::string>("usart_port_name",  usart_port_name,  "/dev/dlrobot_controller"); //Fixed串口号
+  private_nh.param<std::string>("usart_port_name",  usart_port_name,  "/dev/dlrobot_controller"); //Fixed serial port number //固定串口号
   private_nh.param<int>        ("serial_baud_rate", serial_baud_rate, 115200); //Communicate baud rate 115200 to the lower machine //和下位机通信波特率115200
-  // private_nh.param<std::string>("odom_frame_id",    odom_frame_id,    "odom_combined");      // 注释掉，使用硬编码
-  // private_nh.param<std::string>("robot_frame_id",   robot_frame_id,   "base_footprint"); // 注释掉，使用硬编码
+  private_nh.param<std::string>("odom_frame_id",    odom_frame_id,    "odom_combined");      //The odometer topic corresponds to the parent TF coordinate //里程计话题对应父TF坐标
+  private_nh.param<std::string>("robot_frame_id",   robot_frame_id,   "base_footprint"); //The odometer topic corresponds to sub-TF coordinates //里程计话题对应子TF坐标
   private_nh.param<std::string>("gyro_frame_id",    gyro_frame_id,    "imu_link"); //IMU topics correspond to TF coordinates //IMU话题对应TF坐标
 
   voltage_publisher = n.advertise<std_msgs::Float32>("PowerVoltage", 10); //Create a battery-voltage topic publisher //创建电池电压话题发布者
