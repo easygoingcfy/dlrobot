@@ -50,28 +50,33 @@ void turn_on_robot::Cmd_Vel_Callback(const geometry_msgs::Twist &twist_aux)
 {
   short  transition;  //intermediate variable //中间变量
 
+  // 读取并限幅（饱和）
+  double vx = std::max(-max_linear_speed,  std::min(max_linear_speed,  (double)twist_aux.linear.x));
+  double vy = std::max(-max_linear_speed,  std::min(max_linear_speed,  (double)twist_aux.linear.y));
+  double wz = std::max(-max_angular_speed, std::min(max_angular_speed, (double)twist_aux.angular.z));
+
   Send_Data.tx[0]=FRAME_HEADER; //frame head 0x7B //帧头0X7B
   Send_Data.tx[1] = 0; //set aside //预留位
   Send_Data.tx[2] = 0; //set aside //预留位
 
-  //The target velocity of the X-axis of the robot
-  //机器人x轴的目标线速度
+  // The target velocity of the X-axis of the robot
+  // 机器人x轴的目标线速度
   transition=0;
-  transition = twist_aux.linear.x*1000; //将浮点数放大一千倍，简化传输
+  transition = (short)std::round(vx*1000.0); //将浮点数放大一千倍，简化传输
   Send_Data.tx[4] = transition;     //取数据的低8位
   Send_Data.tx[3] = transition>>8;  //取数据的高8位
 
-  //The target velocity of the Y-axis of the robot
-  //机器人y轴的目标线速度
+  // The target velocity of the Y-axis of the robot
+  // 机器人y轴的目标线速度
   transition=0;
-  transition = twist_aux.linear.y*1000;
+  transition = (short)std::round(vy*1000.0);
   Send_Data.tx[6] = transition;
   Send_Data.tx[5] = transition>>8;
 
-  //The target angular velocity of the robot's Z axis
-  //机器人z轴的目标角速度
+  // The target angular velocity of the robot's Z axis
+  // 机器人z轴的目标角速度
   transition=0;
-  transition = twist_aux.angular.z*1000;
+  transition = (short)std::round(wz*1000.0);
   Send_Data.tx[8] = transition;
   Send_Data.tx[7] = transition>>8;
 
@@ -494,6 +499,9 @@ turn_on_robot::turn_on_robot():Sampling_Time(0),Power_voltage(0)
   private_nh.param<std::string>("robot_frame_id",   robot_frame_id,   "base_link");
   private_nh.param<std::string>("gyro_frame_id",    gyro_frame_id,    "imu_link");
   private_nh.param<bool>       ("publish_tf",       publish_tf,       true);
+  // 新增：速度限制参数（默认安全值，可根据底盘能力调整）
+  private_nh.param<double>     ("max_linear_speed",  max_linear_speed,  0.5);  // m/s
+  private_nh.param<double>     ("max_angular_speed", max_angular_speed, 1.0);  // rad/s
 
   voltage_publisher = n.advertise<std_msgs::Float32>("PowerVoltage", 10); //Create a battery-voltage topic publisher //创建电池电压话题发布者
   odom_publisher    = n.advertise<nav_msgs::Odometry>("odom", 50); //Create the odometer topic publisher //创建里程计话题发布者

@@ -168,5 +168,9 @@ class turn_on_robot
 
         // 是否发布里程计TF（odom->base_link/base_footprint），可通过参数publish_tf配置
         bool publish_tf;           // 控制是否发布TF
+
+        // 速度限制参数（m/s, rad/s）
+        double max_linear_speed;   // 最大线速度，应用于x/y
+        double max_angular_speed;  // 最大角速度，应用于z
 };
 #endif
