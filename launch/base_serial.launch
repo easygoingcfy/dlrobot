@@ -1,7 +1,8 @@
 <launch>
   <!-- 打开节点dlrobot_robot，初始化串口等操作 -->
   <arg name="odom_frame_id"   default="odom"/>
-  <arg name="robot_frame_id"  default="base_link"/>
+  <arg name="robot_frame_id"  default="base_footprint"/>
+  <!-- <arg name="robot_frame_id"  default="base_link"/> -->
   <arg name="publish_tf"      default="true"/>
 
   <node pkg="dlrobot_robot" type="dlrobot_robot_node" name="dlrobot_robot" output="screen" respawn="false">
